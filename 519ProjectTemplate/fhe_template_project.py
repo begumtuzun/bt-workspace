@@ -7,6 +7,9 @@ import timeit
 import networkx as nx
 from random import random
 
+from typing import List
+from collections import deque
+
 # Using networkx, generate a random graph
 # You can change the way you generate the graph
 def generateGraph(n, k, p):
@@ -35,12 +38,11 @@ def serializeGraphZeroOne(GG,vec_size):
     # EVA vector size has to be large, if the vector representation of the graph is smaller, fill the eva vector with zeros
     for i in range(vec_size - n*n): 
         g.append(0.0)
+
     return g, graphdict
 
 # To display the generated graph
 def printGraph(graph,n):
-    print(graph)
-    print(n)
     for row in range(n):
         for column in range(n):
             print("{:.5f}".format(graph[row*n+column]), end = '\t')
@@ -98,10 +100,37 @@ def simulate(n):
         graph = Input('Graph')
         reval = graphanalticprogram(graph)
         Output('ReturnedValue', reval)
-    
     prog = graphanaltic
     prog.set_output_ranges(30)
     prog.set_input_scales(30)
+
+    pregraph = [x for x in inputs['Graph'] if type(x) == int]
+
+    k = 0
+    j = 0
+    prefgraph = [[]]
+    for i in pregraph:
+        if j == n:
+            j = 0
+            k += 1
+            prefgraph.append([])
+        prefgraph[k].append(i)
+        j += 1
+
+    fgraph = []
+    for i in range(len(prefgraph)):
+        fgraph.append([])
+        for j in range(len(prefgraph[i])):
+            if prefgraph[i][j] == 1:
+                fgraph[i].append(j)
+
+    for i in range(n):
+        src = i
+        dst = n-1
+        print("path from src {} to dst {} are".format(
+            src, dst))
+    
+        findpaths(fgraph, src, dst, n)
 
     start = timeit.default_timer()
     compiler = CKKSCompiler(config=config)
@@ -130,16 +159,70 @@ def simulate(n):
     
     # Change this if you want to output something or comment out the two lines below
     for key in outputs:
-        print(key, float(outputs[key][0]), float(reference[key][0]))
+        pass
+        #print(key, float(outputs[key][0]), float(reference[key][0]))
 
     mse = valuation_mse(outputs, reference) # since CKKS does approximate computations, this is an important measure that depicts the amount of error
     return compiletime, keygenerationtime, encryptiontime, executiontime, decryptiontime, referenceexecutiontime, mse
 
 
+ 
+# Utility function for printing
+# the found path in graph
+def printpath(path: List[int]) -> None:
+    size = len(path)
+    for i in range(size):
+        print(path[i], end = " ")
+         
+    print()
+ 
+# Utility function to check if current
+# vertex is already present in path
+def isNotVisited(x: int, path: List[int]) -> int:
+ 
+    size = len(path)
+    for i in range(size):
+        if (path[i] == x):
+            return 0
+             
+    return 1
+ 
+# Utility function for finding paths in graph
+# from source to destination
+def findpaths(g: List[List[int]], src: int,
+              dst: int, v: int) -> None:
+                   
+    # Create a queue which stores
+    # the paths
+    q = deque()
+ 
+    # Path vector to store the current path
+    path = []
+    path.append(src)
+    q.append(path.copy())
+     
+    while q:
+        path = q.popleft()
+        last = path[len(path) - 1]
+ 
+        # If last vertex is the desired destination
+        # then print the path
+        if (last == dst):
+            printpath(path)
+ 
+        # Traverse to all the nodes connected to
+        # current vertex and push new path to queue
+        for i in range(len(g[last])):
+            if (isNotVisited(g[last][i], path)):
+                newpath = path.copy()
+                newpath.append(g[last][i])
+                q.append(newpath)
+
+
 if __name__ == "__main__":
-    countList = [3,100,300]
-    for j in range(0,3):
-        simcnt = countList[j] #The number of simulation runs, set it to 3 during development otherwise you will wait for a long time
+    simcnt = 1
+    for j in range(0,1):
+        #The number of simulation runs, set it to 3 during development otherwise you will wait for a long time
         # For benchmarking you must set it to a large number, e.g., 100
         #Note that file is opened in append mode, previous results will be kept in the file
         resultfile = open("results" + str(j) + ".csv", "w")  # Measurement results are collated in this file for you to plot later on
@@ -147,13 +230,13 @@ if __name__ == "__main__":
         resultfile.close()
         
         print("Simulation campaing started:")
-        for nc in range(36,64,4): # Node counts for experimenting various graph sizes
+        for nc in range(36,44,4): # Node counts for experimenting various graph sizes
             n = nc
-            resultfile = open("results" + str(j) + ".csv", "a") 
+            resultfile = open("results" + str(j) + ".csv", "a")
+
             for i in range(simcnt):
                 #Call the simulator
                 compiletime, keygenerationtime, encryptiontime, executiontime, decryptiontime, referenceexecutiontime, mse = simulate(n)
                 res = str(n) + "," + str(i) + "," + str(compiletime) + "," + str(keygenerationtime) + "," +  str(encryptiontime) + "," +  str(executiontime) + "," +  str(decryptiontime) + "," +  str(referenceexecutiontime) + "," +  str(mse) + "\n"
-                print(res)
                 resultfile.write(res)
             resultfile.close()
