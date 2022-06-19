@@ -1,4 +1,5 @@
 from itertools import count
+from socket import gaierror
 from eva import EvaProgram, Input, Output, evaluate
 from eva.ckks import CKKSCompiler
 from eva.seal import generate_keys
@@ -6,15 +7,15 @@ from eva.metric import valuation_mse
 import timeit
 import networkx as nx
 from random import random
-
 from typing import List
 from collections import deque
+import matplotlib.pyplot as plt
 
 # Using networkx, generate a random graph
 # You can change the way you generate the graph
 def generateGraph(n, k, p):
     #ws = nx.cycle_graph(n)
-    ws = nx.watts_strogatz_graph(n,k,p)
+    ws = nx.watts_strogatz_graph(n,k,p,121)
     return ws
 
 # If there is an edge between two vertices its weight is 1 otherwise it is zero
@@ -42,7 +43,7 @@ def serializeGraphZeroOne(GG,vec_size):
     return g, graphdict
 
 # To display the generated graph
-def printGraph(graph,n):
+def printGraph(graph,n, x): 
     for row in range(n):
         for column in range(n):
             print("{:.5f}".format(graph[row*n+column]), end = '\t')
@@ -55,7 +56,7 @@ def prepareInput(n, m):
     GG = generateGraph(n,3,0.5)
     graph, graphdict = serializeGraphZeroOne(GG,m)
     input['Graph'] = graph
-    return input
+    return input, GG
 
 # This is the dummy analytic service
 # You will implement this service based on your selected algorithm
@@ -85,15 +86,17 @@ class EvaProgramDriver(EvaProgram):
 # You can modify the input parameters
 # n is the number of nodes in your graph
 # If you require additional parameters, add them
-def simulate(n):
+def simulate(n, j):
     m = 4096*4
+    with open("deneme.txt","a") as f:
+        f.write("Will start simulation for " + str(n) + " smcnt" + str(j) + "\n")
     print("Will start simulation for ", n)
     config = {}
     config['warn_vec_size'] = 'false'
     config['lazy_relinearize'] = 'true'
     config['rescaler'] = 'always'
     config['balance_reductions'] = 'true'
-    inputs = prepareInput(n, m)
+    inputs, g = prepareInput(n, m)
 
     graphanaltic = EvaProgramDriver("graphanaltic", vec_size=m,n=n)
     with graphanaltic:
@@ -126,11 +129,11 @@ def simulate(n):
 
     for i in range(n):
         src = i
-        dst = n-1
-        print("path from src {} to dst {} are".format(
-            src, dst))
-    
-        findpaths(fgraph, src, dst, n)
+        for k in range(n):
+            dst = k
+            print("path from src {} to dst {} are".format(src, dst))
+            x = "path from src {} to dst {} are".format(src, dst)
+            findpaths(fgraph, src, dst, n, x)
 
     start = timeit.default_timer()
     compiler = CKKSCompiler(config=config)
@@ -163,17 +166,21 @@ def simulate(n):
         #print(key, float(outputs[key][0]), float(reference[key][0]))
 
     mse = valuation_mse(outputs, reference) # since CKKS does approximate computations, this is an important measure that depicts the amount of error
-    return compiletime, keygenerationtime, encryptiontime, executiontime, decryptiontime, referenceexecutiontime, mse
+    return compiletime, keygenerationtime, encryptiontime, executiontime, decryptiontime, referenceexecutiontime, mse, g
 
 
  
 # Utility function for printing
 # the found path in graph
-def printpath(path: List[int]) -> None:
+def printpath(path: List[int], x) -> None:
     size = len(path)
-    for i in range(size):
-        print(path[i], end = " ")
-         
+    with open("deneme.txt","a") as f:
+        f.write(x + "\n")
+        for i in range(size):
+            y = path[i]
+            f.write(str(y) + " ")
+            print(path[i], end = " ")
+        f.write("\n") 
     print()
  
 # Utility function to check if current
@@ -190,25 +197,24 @@ def isNotVisited(x: int, path: List[int]) -> int:
 # Utility function for finding paths in graph
 # from source to destination
 def findpaths(g: List[List[int]], src: int,
-              dst: int, v: int) -> None:
+              dst: int, v: int, x) -> None:
                    
     # Create a queue which stores
     # the paths
     q = deque()
- 
+    nodes = []
     # Path vector to store the current path
     path = []
     path.append(src)
     q.append(path.copy())
-     
     while q:
         path = q.popleft()
         last = path[len(path) - 1]
- 
+
         # If last vertex is the desired destination
         # then print the path
         if (last == dst):
-            printpath(path)
+            printpath(path, x)
  
         # Traverse to all the nodes connected to
         # current vertex and push new path to queue
@@ -220,8 +226,8 @@ def findpaths(g: List[List[int]], src: int,
 
 
 if __name__ == "__main__":
-    simcnt = 1
-    for j in range(0,1):
+    simcnt = 2
+    for j in range(0,3):
         #The number of simulation runs, set it to 3 during development otherwise you will wait for a long time
         # For benchmarking you must set it to a large number, e.g., 100
         #Note that file is opened in append mode, previous results will be kept in the file
@@ -230,13 +236,17 @@ if __name__ == "__main__":
         resultfile.close()
         
         print("Simulation campaing started:")
-        for nc in range(36,44,4): # Node counts for experimenting various graph sizes
+        for nc in range(32,44,4): # Node counts for experimenting various graph sizes
             n = nc
             resultfile = open("results" + str(j) + ".csv", "a")
 
             for i in range(simcnt):
                 #Call the simulator
-                compiletime, keygenerationtime, encryptiontime, executiontime, decryptiontime, referenceexecutiontime, mse = simulate(n)
+                compiletime, keygenerationtime, encryptiontime, executiontime, decryptiontime, referenceexecutiontime, mse, g = simulate(n, j)
                 res = str(n) + "," + str(i) + "," + str(compiletime) + "," + str(keygenerationtime) + "," +  str(encryptiontime) + "," +  str(executiontime) + "," +  str(decryptiontime) + "," +  str(referenceexecutiontime) + "," +  str(mse) + "\n"
                 resultfile.write(res)
             resultfile.close()
+            print("\n\n")
+            nx.draw(g, with_labels=True, node_size=120,font_size=8)
+            plt.savefig('plotgraph' + str(nc) + "smcnt" + str(j) + '.png', dpi=1000, bbox_inches='tight', pad_inches=0.1)
+            plt.clf()
